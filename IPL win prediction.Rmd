@@ -16,7 +16,6 @@ library(reshape2)
 library(ggthemes)
 ```
 
-
 ```{r}
 matches<-read.csv("C:/Users/omhas/Documents/IPL Project/Dataset/matches.csv")
 head(matches)
@@ -59,7 +58,6 @@ head(matches)
 ```{r}
 unique(matches$winner)
 ```
-
 
 ```{r}
 # Replace occurrences of 'Delhi Daredevils' with 'Delhi Capitals'
@@ -296,141 +294,80 @@ ggplot(df_top20, aes(x = reorder(Players, -Wicket), y = Wicket)) + geom_bar(stat
 head(matches, 2)
 ```
 
-
 ```{r}
-matches <- matches %>%
-  mutate(WinningTeam = ifelse(winner == "N", team2, winner))
+matches <- matches %>% mutate(WinningTeam = ifelse(winner == "N", team2, winner))
 
-# Count the number of wins for each team
-wins <- matches %>%
-  count(WinningTeam) %>%
-  arrange(desc(n))
+wins <- matches %>% count(WinningTeam) %>% arrange(desc(n))
 
-# Select the top 10 teams by the number of wins
-top_teams <- wins %>%
-  top_n(10, n)
+top_teams <- wins %>% top_n(10, n)
 
-# Create the bar plot using ggplot2
-ggplot(top_teams, aes(x = reorder(WinningTeam, -n), y = n)) +
-  geom_bar(stat = "identity", aes(fill = WinningTeam)) +
-  labs(title = "Top 10 Best Performing Teams",
-       x = "Team",
-       y = "Number of Wins") +  scale_fill_brewer(palette = "Set3") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
+ggplot(top_teams, aes(x = reorder(WinningTeam, -n), y = n)) + geom_bar(stat = "identity", aes(fill = WinningTeam)) + labs(title = "Top 10 Best Performing Teams", x = "Team", y = "Number of Wins") +  scale_fill_brewer(palette = "Set3") + theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 ```{r}
-matches <- matches %>%
-  mutate(WinningTeam = ifelse(winner == "N", team1, winner))
+matches <- matches %>% mutate(WinningTeam = ifelse(winner == "N", team1, winner))
 
-# Count the number of wins for each team
-wins <- matches %>%
-  count(WinningTeam) %>%
-  arrange(n)  # Sort by the least number of wins
+wins <- matches %>% count(WinningTeam) %>% arrange(n)
 
-# Select the bottom 10 teams by the number of wins
-least_teams <- wins %>%
-  top_n(-10, n)
+least_teams <- wins %>% top_n(-10, n)
 
-# Create the bar plot for the least performing teams using ggplot2
-ggplot(least_teams, aes(x = reorder(WinningTeam, n), y = n)) +
-  geom_bar(stat = "identity", fill = "lightcoral", color = "black") +
-  labs(title = "Top 10 Least Performing Teams",
-       x = "Team",
-       y = "Number of Wins") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggplot(least_teams, aes(x = reorder(WinningTeam, n), y = n)) + geom_bar(stat = "identity", fill = "lightcoral", color = "black") + labs(title = "Top 10 Least Performing Teams", x = "Team", y = "Number of Wins") + theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 ```{r}
 matches <- read.csv("C:/Users/omhas/Documents/IPL Project/Dataset/matches.csv")
-matches
-matches <- matches %>% select(-city, -id, -method) %>% na.omit()
+head(matches)
+matches <- matches %>% select(-city, -id) %>% na.omit()
 
-# Create SEASON_INT and SEASON_END_INT columns
-matches <- matches %>%
-  mutate(
-    SEASON_INT = as.numeric(substr(season, 1, 4)),
-    SEASON_END_INT = ifelse(nchar(season) > 5, as.numeric(paste0('20', substr(season, 6, 7))), SEASON_INT)
-  )
-
-# Convert 'Date' column to Date type
 matches$Date <- as.Date(matches$date)
 
-# Group by 'Season' and select the last row for each group based on the date
-last_matches <- matches %>%
-  arrange(date) %>%
-  group_by(season) %>%
-  slice_tail(n = 1)
+matches <- matches %>% mutate(SEASON_INT = as.numeric(substr(season, 1, 4)), SEASON_END_INT = ifelse(nchar(season) > 5, as.numeric(paste0('20', substr(season, 6, 7))), SEASON_INT))
 
-# Select the relevant columns
+
+last_matches <- matches %>% arrange(date) %>% group_by(season) %>% slice_tail(n = 1)
+
 winning_teams <- last_matches %>% select(SEASON_END_INT, winner)
 
-# Plot using ggplot2
-ggplot(winning_teams, aes(x = SEASON_END_INT, y = winner, fill = as.factor(SEASON_END_INT))) +
-  geom_col() +
-  labs(y = "IPL Teams", x = "Seasons", title = "IPL Winning Teams by Year") +
-  scale_fill_discrete(name = "Year") +
-  theme_minimal()
+ggplot(winning_teams, aes(x = SEASON_END_INT, y = winner, fill = as.factor(SEASON_END_INT))) + geom_col() + labs(y = "IPL Teams", x = "Seasons", title = "IPL Winning Teams by Year") + scale_fill_discrete(name = "Year") + theme_minimal()
 ```
 
 ```{r}
 head(final_df)
-final_df <- final_df %>%
-  mutate(Batting_Avg = ifelse(is.infinite(Batting_Avg), NA, Batting_Avg)) %>%  # Replace Inf with NA
-  filter(!is.na(Batting_Avg))
 
-final_df <- final_df %>%
-  mutate(Bowling_Eco = ifelse(is.infinite(Bowling_Eco), NA, Bowling_Eco)) %>%  # Replace Inf with NA
-  filter(!is.na(Bowling_Eco))
+final_df <- final_df %>% mutate(Batting_Avg = ifelse(is.infinite(Batting_Avg), NA, Batting_Avg)) %>% filter(!is.na(Batting_Avg))
 
-final_df <- final_df %>%
-  mutate(Bowl_Strike_Rate = ifelse(is.infinite(Bowl_Strike_Rate), NA, Bowl_Strike_Rate)) %>%  # Replace Inf with NA
-  filter(!is.na(Bowl_Strike_Rate))
+final_df <- final_df %>% mutate(Bowling_Eco = ifelse(is.infinite(Bowling_Eco), NA, Bowling_Eco)) %>% filter(!is.na(Bowling_Eco))
+
+final_df <- final_df %>% mutate(Bowl_Strike_Rate = ifelse(is.infinite(Bowl_Strike_Rate), NA, Bowl_Strike_Rate)) %>% filter(!is.na(Bowl_Strike_Rate))
 
 numeric_df <- final_df %>% select_if(is.numeric)
+
 correlation_matrix <- cor(numeric_df, use = "complete.obs")
 
-# Melt the correlation matrix
 melted_correlation <- melt(correlation_matrix)
+melted_correlation <- melted_correlation %>% filter(!is.na(value) & value >= -1 & value <= 1)
 
-# Remove NA values and those outside the range of -1 to 1
-melted_correlation <- melted_correlation %>%
-    filter(!is.na(value) & value >= -1 & value <= 1)
-
-# Create the heatmap using ggplot2
 heatmap_plot <- ggplot(data = melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
-  geom_tile(color = "white") +  # Add white borders to tiles
+  geom_tile(color = "white") + 
   scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
-                       midpoint = 0, limit = c(-1, 1), 
-                       name = "Correlation") +  # Define color gradient
-  geom_text(aes(label = round(value, 2)), color = "black", size = 2) +  # Add correlation values on tiles
-  theme_minimal(base_size = 10) +  # Use a minimal theme with larger base size
-  theme(axis.text.x = element_text(angle = 90, hjust = 1),  # Rotate x-axis labels
-        plot.title = element_text(hjust = 0.5)) +  # Center title
-  labs(title = "Heatmap",
-       x = "Variables",
-       y = "Variables")
+                       midpoint = 0, limit = c(-1, 1), name = "Correlation") + geom_text(aes(label = round(value, 2)), color = "black", size = 2) + theme_minimal(base_size = 10) + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(hjust = 0.5)) + labs(title = "Heatmap", x = "Variables", y = "Variables")
 
-# Print the plot to view it
 print(heatmap_plot)
 
-# Specify the path where you want to save the plot
 output_path <- "C:/Users/omhas/Documents/IPL Project/correlation_heatmap.png"
 
-# Save the plot with specified width and height
 ggsave(output_path, plot = heatmap_plot, width = 20, height = 10, dpi = 300, limitsize = FALSE)
 ```
 
+```{r}
+correlation <- function(data, threshold) {
+  corr_matrix <- cor(data, use = "complete.obs")
+  upper_triangle <- corr_matrix[upper.tri(corr_matrix)]
+  col_corr <- colnames(corr_matrix)[apply(corr_matrix, 2, function(col) any(col > threshold))]
+  return(col_corr)
+}
 
-
-
-
-
-
-
-
-
-
+numeric_df <- final_df %>% select_if(is.numeric)
+corr_cols <- correlation(numeric_df, 0.85)
+print(corr_cols)
+```
