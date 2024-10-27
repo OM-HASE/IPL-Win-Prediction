@@ -1,0 +1,436 @@
+---
+title: "IPL Win Prediction "
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(skimr)
+library(knitr)
+library(lubridate)
+library(tibble)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(reshape2)
+library(ggthemes)
+```
+
+
+```{r}
+matches<-read.csv("C:/Users/omhas/Documents/IPL Project/Dataset/matches.csv")
+head(matches)
+```
+
+```{r}
+# Overview of data structure
+glimpse(matches)
+# Missing values
+kable(data.frame(Missing_Values = colSums(is.na(matches))), caption = "Missing Values in Each Column")
+# Detailed skim summary
+skim(matches)
+```
+
+```{r}
+missing_winning_team <- matches[is.na(matches$winner),]
+missing_winning_team
+#These matches has no Result becomes matches are stopped due to Rain or other reasons
+```
+
+```{r}
+# Remove the 'City', 'ID', and 'method' columns from the data frame
+matches <- matches[, !(names(matches) %in% c("city", "id", "method"))]
+matches <- na.omit(matches)
+head(matches)
+```
+
+```{r}
+# Convert the 'Date' column to a Date type
+matches$date <- as.Date(matches$date, format = "%Y-%m-%d")
+#Create 'SEASON_START_INT' column by extracting the first four characters from 'Season' and converting to integer
+matches$SEASON_START_INT <- as.integer(substr(matches$season, 1, 4))
+  
+# Create 'SEASON_END_INT' column based on the length of the 'Season' value
+matches$SEASON_END_INT <- ifelse(nchar(matches$season) > 5, as.integer(paste0("20", substr(matches$season, 6, 7))), matches$SEASON_START_INT)
+matches <- matches[, !(names(matches) %in% "season")]
+head(matches)
+```
+
+```{r}
+unique(matches$winner)
+```
+
+
+```{r}
+# Replace occurrences of 'Delhi Daredevils' with 'Delhi Capitals'
+matches$team1 <- gsub('Delhi Daredevils', 'Delhi Capitals', matches$team1)
+matches$team2 <- gsub('Delhi Daredevils', 'Delhi Capitals', matches$team2)
+matches$winner <- gsub('Delhi Daredevils', 'Delhi Capitals', matches$winner)
+
+# Replace occurrences of 'Kings XI Punjab' with 'Punjab Kings'
+matches$team1 <- gsub('Kings XI Punjab', 'Punjab Kings', matches$team1)
+matches$team2 <- gsub('Kings XI Punjab', 'Punjab Kings', matches$team2)
+matches$winner <- gsub('Kings XI Punjab', 'Punjab Kings', matches$winner)
+
+# Replace occurrences of 'Deccan Chargers' with 'Sunrisers Hyderabad'
+matches$team1 <- gsub('Deccan Chargers', 'Sunrisers Hyderabad', matches$team1)
+matches$team2 <- gsub('Deccan Chargers', 'Sunrisers Hyderabad', matches$team2)
+matches$winner <- gsub('Deccan Chargers', 'Sunrisers Hyderabad', matches$winner)
+
+# Replace occurrences of 'Rising Pune Supergiant' with 'Pune Warriors'
+matches$team1 <- gsub('Rising Pune Supergiant', 'Pune Warriors', matches$team1)
+matches$team2 <- gsub('Rising Pune Supergiant', 'Pune Warriors', matches$team2)
+matches$winner <- gsub('Rising Pune Supergiant', 'Pune Warriors', matches$winner)
+
+# Replace occurrences of 'Rising Pune Supergiants' with 'Pune Warriors'
+matches$team1 <- gsub('Rising Pune Supergiants', 'Pune Warriors', matches$team1)
+matches$team2 <- gsub('Rising Pune Supergiants', 'Pune Warriors', matches$team2)
+matches$winner <- gsub('Rising Pune Supergiants', 'Pune Warriors', matches$winner)
+
+# Replace occurrences of 'Gujarat Lions' with 'Gujarat Titans'
+matches$team1 <- gsub('Gujarat Lions', 'Gujarat Titans', matches$team1)
+matches$team2 <- gsub('Gujarat Lions', 'Gujarat Titans', matches$team2)
+matches$winner <- gsub('Gujarat Lions', 'Gujarat Titans', matches$winner)
+
+head(matches)
+```
+
+```{r}
+deliveries<-read.csv("C:/Users/omhas/Documents/IPL Project/Dataset/deliveries.csv")
+head(deliveries)
+```
+
+```{r}
+# Overview of data structure
+glimpse(deliveries)
+# Missing values
+kable(data.frame(Missing_Values = colSums(is.na(deliveries))), caption = "Missing Values in Each Column")
+# Detailed skim summary
+skim(deliveries)
+```
+
+```{r}
+# Group the data by 'batter' and how much Ball he had played, no. of inning, no. of runs, Batting Avg, Strike Rate.
+batstatic <- deliveries %>% group_by(batter) %>% summarise(Total_Inning = sum(n_distinct(inning)), Total_Balls = n(), Total_Runs = sum(batsman_runs, na.rm = TRUE), Total_0_Runs = sum(batsman_runs == 0, na.rm = TRUE), Total_1_Runs = sum(batsman_runs == 1, na.rm = TRUE), Total_2_Runs = sum(batsman_runs == 2, na.rm = TRUE), Total_3_Runs = sum(batsman_runs == 3, na.rm = TRUE), Total_4_Runs = sum(batsman_runs == 4, na.rm = TRUE), Total_6_Runs = sum(batsman_runs == 6, na.rm = TRUE), Player_Out = sum(is_wicket, na.rm = TRUE), Batting_Avg = round(Total_Runs / Player_Out, 2), Strike_Rate = round(Total_Runs/Total_Balls*100, 2))
+head(batstatic)
+```
+
+```{r}
+# Group the data by 'Bowler' and how much Bowls he had Throws, Wicket, Over etc
+ballstatic<-deliveries %>% group_by(bowler) %>% summarise(Balls_Throws = n(), Wicket = sum(dismissal_kind %in% c('caught', 'bowled', 'lbw', 'stumped', 'caught and bowled', 'hit wicket')), Over = round(Balls_Throws/6), Runs_Conceded = sum(batsman_runs, na.rm = TRUE), Extras = sum(ifelse(extras_type %in% c('wides', 'noballs'), extra_runs, 0), na.rm = TRUE), Bowling_Eco = round(Runs_Conceded/Over,2), Bowl_Strike_Rate = round(Balls_Throws/Wicket,2)) %>% mutate(Runs_Conceded = Runs_Conceded + Extras)
+ballstatic
+```
+
+```{r}
+# Initialize an empty list to store players and their matches
+players_matches_dict <- list()
+
+# Iterate over each row in the 'deliveries' dataframe
+for (i in 1:nrow(deliveries)) {
+  row <- deliveries[i, ]
+  
+  batter <- as.character(row$batter)
+  non_striker <- as.character(row$non_striker)
+  bowler <- as.character(row$bowler)
+  
+  players_matches_dict[[batter]] <- unique(c(players_matches_dict[[batter]], row$match_id))
+  players_matches_dict[[non_striker]] <- unique(c(players_matches_dict[[non_striker]], row$match_id))
+  players_matches_dict[[bowler]] <- unique(c(players_matches_dict[[bowler]], row$match_id))
+}
+
+# Convert the list to a data frame
+final_players_matches <- data.frame(Players = names(players_matches_dict), Matches = sapply(players_matches_dict, length))
+
+# Sort by player names
+final_players_matches <- final_players_matches %>% arrange(Players)
+head(final_players_matches)
+
+```
+
+```{r}
+# Filter for 'caught and bowled' for bowlers
+outbyCatch <- deliveries %>% filter(dismissal_kind == "caught and bowled") %>% group_by(bowler) %>% summarise(bowler_catches = n())
+
+# Filter for 'caught' for fielders
+justCatch <- deliveries %>% filter(dismissal_kind == "caught") %>% group_by(fielder = fielder) %>% summarise(fielder_catches = n())
+
+# Merge both dataframes on the common column (bowler for outbyCatch, fielder for justCatch)
+catchDf <- full_join(outbyCatch, justCatch, by = c("bowler" = "fielder"))
+
+# Replace NA values with 0
+catchDf[is.na(catchDf)] <- 0
+
+# Add a new column for total catches
+catchDf <- catchDf %>% mutate(catches = bowler_catches + fielder_catches)
+
+# Drop the individual 'bowler_catches' and 'fielder_catches' columns
+catchDf <- catchDf %>% select(bowler, catches)
+
+# Display the result
+head(catchDf)
+
+```
+
+```{r}
+# Merging Batsman Stats
+final_df <- full_join(final_players_matches, batstatic, by = c("Players" = "batter"))
+
+# Merging Bowler Stats
+final_df <- full_join(final_df, ballstatic, by = c("Players" = "bowler"))
+
+# Merging Catches Stats
+final_df <- full_join(final_df, catchDf, by = c("Players" = "bowler"))
+
+# Merging the data of players who got Man of the Match or not
+man_of_match <- matches %>% count(player_of_match) %>% rename(Player = player_of_match, Man_of_Match = n)
+
+final_df <- full_join(final_df, man_of_match, by = c("Players" = "Player"))
+
+# Replace NA values with 0
+final_df[is.na(final_df)] <- 0
+
+final_df <- final_df %>% mutate(Players = paste(row_number(), Players, sep = ": "))
+
+final_df
+```
+
+```{r}
+final_df$Total_Runs <- as.numeric(final_df$Total_Runs)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Man_of_Match, y = Total_Runs, fill = Total_Runs)) + geom_point(aes(color = Total_Runs), size = 2.5, alpha = 1) +   geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) + labs(title = "Number of Runs Scored by Players who got Player of the Match", x = "Player of the Match", y = "Number of Runs")  + theme_minimal() +  theme(axis.text.y = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df$Wicket <- as.numeric(final_df$Wicket)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Man_of_Match, y = Wicket, fill = Wicket)) + geom_point(aes(color = Wicket), size = 2.5, alpha = 1) +   geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) + labs(title = "Number of Wicket Taken by Different Players", x = "Player of the Match", y = "Number of Wicket")  + theme_minimal() +  theme(axis.text.y = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df$Man_of_Match <- as.numeric(final_df$Man_of_Match)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Matches, y = Man_of_Match)) + geom_point(aes(color = Man_of_Match), size = 2.5, alpha = 0.7) + geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) +  labs(title = "Player of the Match by Player", x = "Matches Played", y = "Player of the Match") + theme_minimal() + theme(axis.text.y = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df$Strike_Rate <- as.numeric(final_df$Strike_Rate)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Matches, y = Strike_Rate)) + geom_point(aes(color = Strike_Rate, size = Strike_Rate), alpha = 0.5, size = 2.5) + geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) + labs(title = "Batsman Strike Rate by Player", x = "Matches Played", y = "Batting Strike Rate") + scale_color_gradient(low = "red", high = "darkred") + theme_minimal() + theme(axis.text.y = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df$catches <- as.numeric(final_df$catches)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Matches, y = catches)) +
+  geom_point(aes(color = catches, size = catches), alpha = 1, size = 2.5) + geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) + labs(title = "Most Catches by Players", x = "Matches Played", y = "Number of Catches") + scale_color_gradient(low = "red", high = "darkred") + theme_minimal() + theme(axis.text.y = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df$Bowling_Eco <- as.numeric(final_df$Bowling_Eco)
+final_df$Matches <- as.numeric(final_df$Matches)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Matches, y = Bowling_Eco)) + geom_point(aes(color = Bowling_Eco, size = Matches), alpha = 1, size = 2.5) + geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) + labs(title = "Bowling Economy by Players", x = "Matches Played", y = "Bowling Economy") + scale_color_gradient(low = "lightcoral", high = "darkred") + theme_minimal() + theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df$Total_6_Runs <- as.numeric(final_df$Total_6_Runs)
+final_df$Matches <- as.numeric(final_df$Matches)
+final_df <- final_df %>% mutate(Row_Number = row_number()) 
+
+ggplot(final_df, aes(x = Matches, y = Total_6_Runs)) + geom_point(aes(color = Total_6_Runs, size = Total_6_Runs), alpha = 1, size = 2.5) + geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) +labs(title = "Most 6s by a Batsman", x = "Matches Played", y = "Number of 6s") + scale_color_gradient(low = "lightgreen", high = "darkgreen") + theme_minimal() + theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df$Total_4_Runs <- as.numeric(final_df$Total_4_Runs)
+final_df$Matches <- as.numeric(final_df$Matches)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Matches, y = Total_4_Runs)) + geom_point(aes(color = Total_4_Runs, size = Total_4_Runs), alpha = 1, size = 2.5) +geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) + labs(title = "Most 4s by a Batsman", x = "Matches Played",y = "Number of 4s") + scale_color_gradient(low = "lightblue", high = "darkblue") + theme_minimal() + theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df <- final_df %>% rename(dot_balls = Total_0_Runs)
+final_df$dot_balls <- as.numeric(final_df$dot_balls)
+final_df$Matches <- as.numeric(final_df$Matches)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Matches, y = dot_balls)) +geom_point(aes(color = dot_balls, size = dot_balls), alpha = 1, size = 2.5) +geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) +labs(title = "Most Dot Balls Faced by a Batsman", x = "Matches Played", y = "Number of Dot Balls Faced") + scale_color_gradient(low = "lightblue", high = "darkblue") + theme_minimal() + theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df <- final_df %>% mutate(not_out = Matches - Player_Out)
+final_df$Player_Out <- as.numeric(final_df$Player_Out)
+final_df$not_out <- as.numeric(final_df$not_out)
+final_df$Total_Runs <- as.numeric(final_df$Total_Runs)
+final_df <- final_df %>% mutate(Row_Number = row_number())
+
+ggplot(final_df, aes(x = Player_Out, y = not_out)) + geom_point(aes(color = Total_Runs, size = Player_Out), alpha = 1, size = 2.5) + geom_text(aes(label = Row_Number), vjust = -0.5, size = 3, check_overlap = TRUE) + labs(title = "Most Times Out by a Batsman vs Matches Played (Not Out Ratio)", x = "Player Out (Number of Times)", y = "Not Out (Matches Not Out)") + scale_color_gradient(low = "lightblue", high = "darkblue") + theme_minimal() + theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+```{r}
+final_df_filtered <- final_df %>% filter(Matches > 50)
+final_df_filtered
+```
+
+```{r}
+df_top20 <- final_df_filtered[final_df_filtered$Batting_Avg != Inf, ]
+df_top20 <- df_top20 %>% arrange(desc(Batting_Avg)) %>% head(20)
+
+ggplot(df_top20, aes(x = reorder(Players, -Batting_Avg), y = Batting_Avg)) + geom_bar(stat = "identity", aes(fill = Batting_Avg)) +labs(title = "Top 20 Batsmen Based on Batting Average",x = "Player",y = "Batting Average") +scale_fill_gradient(low = "lightblue", high = "darkblue") +theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readabilit
+
+```
+
+```{r}
+df_top20 <- final_df_filtered %>% arrange(desc(Wicket)) %>% head(20)
+
+ggplot(df_top20, aes(x = reorder(Players, -Wicket), y = Wicket)) + geom_bar(stat = "identity", aes(fill = Wicket)) + labs(title = 'Top 20 Bowlers Based on Wickets', x = 'Player', y = 'Wickets') + scale_fill_gradient(low = "lightblue", high = "darkblue") + theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+head(matches, 2)
+```
+
+
+```{r}
+matches <- matches %>%
+  mutate(WinningTeam = ifelse(winner == "N", team2, winner))
+
+# Count the number of wins for each team
+wins <- matches %>%
+  count(WinningTeam) %>%
+  arrange(desc(n))
+
+# Select the top 10 teams by the number of wins
+top_teams <- wins %>%
+  top_n(10, n)
+
+# Create the bar plot using ggplot2
+ggplot(top_teams, aes(x = reorder(WinningTeam, -n), y = n)) +
+  geom_bar(stat = "identity", aes(fill = WinningTeam)) +
+  labs(title = "Top 10 Best Performing Teams",
+       x = "Team",
+       y = "Number of Wins") +  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+matches <- matches %>%
+  mutate(WinningTeam = ifelse(winner == "N", team1, winner))
+
+# Count the number of wins for each team
+wins <- matches %>%
+  count(WinningTeam) %>%
+  arrange(n)  # Sort by the least number of wins
+
+# Select the bottom 10 teams by the number of wins
+least_teams <- wins %>%
+  top_n(-10, n)
+
+# Create the bar plot for the least performing teams using ggplot2
+ggplot(least_teams, aes(x = reorder(WinningTeam, n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightcoral", color = "black") +
+  labs(title = "Top 10 Least Performing Teams",
+       x = "Team",
+       y = "Number of Wins") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+matches <- read.csv("C:/Users/omhas/Documents/IPL Project/Dataset/matches.csv")
+matches
+matches <- matches %>% select(-city, -id, -method) %>% na.omit()
+
+# Create SEASON_INT and SEASON_END_INT columns
+matches <- matches %>%
+  mutate(
+    SEASON_INT = as.numeric(substr(season, 1, 4)),
+    SEASON_END_INT = ifelse(nchar(season) > 5, as.numeric(paste0('20', substr(season, 6, 7))), SEASON_INT)
+  )
+
+# Convert 'Date' column to Date type
+matches$Date <- as.Date(matches$date)
+
+# Group by 'Season' and select the last row for each group based on the date
+last_matches <- matches %>%
+  arrange(date) %>%
+  group_by(season) %>%
+  slice_tail(n = 1)
+
+# Select the relevant columns
+winning_teams <- last_matches %>% select(SEASON_END_INT, winner)
+
+# Plot using ggplot2
+ggplot(winning_teams, aes(x = SEASON_END_INT, y = winner, fill = as.factor(SEASON_END_INT))) +
+  geom_col() +
+  labs(y = "IPL Teams", x = "Seasons", title = "IPL Winning Teams by Year") +
+  scale_fill_discrete(name = "Year") +
+  theme_minimal()
+```
+
+```{r}
+head(final_df)
+final_df <- final_df %>%
+  mutate(Batting_Avg = ifelse(is.infinite(Batting_Avg), NA, Batting_Avg)) %>%  # Replace Inf with NA
+  filter(!is.na(Batting_Avg))
+
+final_df <- final_df %>%
+  mutate(Bowling_Eco = ifelse(is.infinite(Bowling_Eco), NA, Bowling_Eco)) %>%  # Replace Inf with NA
+  filter(!is.na(Bowling_Eco))
+
+final_df <- final_df %>%
+  mutate(Bowl_Strike_Rate = ifelse(is.infinite(Bowl_Strike_Rate), NA, Bowl_Strike_Rate)) %>%  # Replace Inf with NA
+  filter(!is.na(Bowl_Strike_Rate))
+
+numeric_df <- final_df %>% select_if(is.numeric)
+correlation_matrix <- cor(numeric_df, use = "complete.obs")
+
+# Melt the correlation matrix
+melted_correlation <- melt(correlation_matrix)
+
+# Remove NA values and those outside the range of -1 to 1
+melted_correlation <- melted_correlation %>%
+    filter(!is.na(value) & value >= -1 & value <= 1)
+
+# Create the heatmap using ggplot2
+heatmap_plot <- ggplot(data = melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +  # Add white borders to tiles
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), 
+                       name = "Correlation") +  # Define color gradient
+  geom_text(aes(label = round(value, 2)), color = "black", size = 2) +  # Add correlation values on tiles
+  theme_minimal(base_size = 10) +  # Use a minimal theme with larger base size
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),  # Rotate x-axis labels
+        plot.title = element_text(hjust = 0.5)) +  # Center title
+  labs(title = "Heatmap",
+       x = "Variables",
+       y = "Variables")
+
+# Print the plot to view it
+print(heatmap_plot)
+
+# Specify the path where you want to save the plot
+output_path <- "C:/Users/omhas/Documents/IPL Project/correlation_heatmap.png"
+
+# Save the plot with specified width and height
+ggsave(output_path, plot = heatmap_plot, width = 20, height = 10, dpi = 300, limitsize = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
