@@ -14,6 +14,9 @@ library(ggplot2)
 library(plotly)
 library(reshape2)
 library(ggthemes)
+library(stringr)
+library(caret)
+library(randomForest)
 ```
 
 ```{r}
@@ -350,7 +353,7 @@ melted_correlation <- melted_correlation %>% filter(!is.na(value) & value >= -1 
 heatmap_plot <- ggplot(data = melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
   geom_tile(color = "white") + 
   scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
-                       midpoint = 0, limit = c(-1, 1), name = "Correlation") + geom_text(aes(label = round(value, 2)), color = "black", size = 2) + theme_minimal(base_size = 10) + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(hjust = 0.5)) + labs(title = "Heatmap", x = "Variables", y = "Variables")
+                       midpoint = 0, limit = c(-1, 1), name = "Correlation") + geom_text(aes(label = round(value, 2)), color = "black", size = 2) + theme_minimal(base_size = 10) + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(hjust = 0.5)) + labs(title = "Heatmap Confusion Matrix", x = "Variables", y = "Variables")
 
 print(heatmap_plot)
 
@@ -360,14 +363,219 @@ ggsave(output_path, plot = heatmap_plot, width = 20, height = 10, dpi = 300, lim
 ```
 
 ```{r}
-correlation <- function(data, threshold) {
-  corr_matrix <- cor(data, use = "complete.obs")
-  upper_triangle <- corr_matrix[upper.tri(corr_matrix)]
-  col_corr <- colnames(corr_matrix)[apply(corr_matrix, 2, function(col) any(col > threshold))]
-  return(col_corr)
+matches<-read.csv("C:/Users/omhas/Documents/IPL Project/Dataset/matches.csv")
+head(matches)
+deliveries<-read.csv("C:/Users/omhas/Documents/IPL Project/Dataset/deliveries.csv")
+head(deliveries)
+```
+
+```{r}
+inning_score<- deliveries %>% group_by(match_id, inning) %>% summarise(total_runs = sum(total_runs)) %>% ungroup() %>% filter(inning == 1)
+head(inning_score)
+```
+```{r}
+inning_score <- inning_score %>% mutate(target = total_runs + 1)
+head(inning_score)
+```
+```{r}
+colnames(matches)[colnames(matches) == "ID"] <- "id"
+colnames(inning_score)[colnames(inning_score) == "match_id"] <- "id"
+matches <- matches %>% left_join(inning_score %>% select(id, target), by = "id")
+head(matches)
+```
+
+```{r}
+# Replace occurrences of 'Delhi Daredevils' with 'Delhi Capitals'
+matches$team1 <- gsub('Delhi Daredevils', 'Delhi Capitals', matches$team1)
+matches$team2 <- gsub('Delhi Daredevils', 'Delhi Capitals', matches$team2)
+matches$winner <- gsub('Delhi Daredevils', 'Delhi Capitals', matches$winner)
+
+# Replace occurrences of 'Kings XI Punjab' with 'Punjab Kings'
+matches$team1 <- gsub('Kings XI Punjab', 'Punjab Kings', matches$team1)
+matches$team2 <- gsub('Kings XI Punjab', 'Punjab Kings', matches$team2)
+matches$winner <- gsub('Kings XI Punjab', 'Punjab Kings', matches$winner)
+
+# Replace occurrences of 'Deccan Chargers' with 'Sunrisers Hyderabad'
+matches$team1 <- gsub('Deccan Chargers', 'Sunrisers Hyderabad', matches$team1)
+matches$team2 <- gsub('Deccan Chargers', 'Sunrisers Hyderabad', matches$team2)
+matches$winner <- gsub('Deccan Chargers', 'Sunrisers Hyderabad', matches$winner)
+
+# Replace occurrences of 'Rising Pune Supergiant' with 'Pune Warriors'
+matches$team1 <- gsub('Rising Pune Supergiant', 'Pune Warriors', matches$team1)
+matches$team2 <- gsub('Rising Pune Supergiant', 'Pune Warriors', matches$team2)
+matches$winner <- gsub('Rising Pune Supergiant', 'Pune Warriors', matches$winner)
+
+# Replace occurrences of 'Rising Pune Supergiants' with 'Pune Warriors'
+matches$team1 <- gsub('Rising Pune Supergiants', 'Pune Warriors', matches$team1)
+matches$team2 <- gsub('Rising Pune Supergiants', 'Pune Warriors', matches$team2)
+matches$winner <- gsub('Rising Pune Supergiants', 'Pune Warriors', matches$winner)
+
+# Replace occurrences of 'Gujarat Lions' with 'Gujarat Titans'
+matches$team1 <- gsub('Gujarat Lions', 'Gujarat Titans', matches$team1)
+matches$team2 <- gsub('Gujarat Lions', 'Gujarat Titans', matches$team2)
+matches$winner <- gsub('Gujarat Lions', 'Gujarat Titans', matches$winner)
+
+head(matches)
+```
+```{r}
+teams2024<- c(
+    'Rajasthan Royals',
+    'Royal Challengers Bangalore',
+    'Sunrisers Hyderabad', 
+    'Delhi Capitals', 
+    'Chennai Super Kings',
+    'Gujarat Titans', 
+    'Lucknow Super Giants', 
+    'Kolkata Knight Riders',
+    'Punjab Kings', 
+    'Mumbai Indians'
+)
+
+matches <- matches %>% filter(team1 %in% teams2024) %>% filter(team2 %in% teams2024) %>% filter(winner %in% teams2024)
+unique_teams <- unique(matches$team1)
+print(unique_teams)
+head(matches)
+```
+```{r}
+matches <- matches %>% select(id, city, team1, team2, winner, target) %>% na.omit()
+head(matches)
+```
+```{r}
+deliveries$batting_team <- str_replace_all(deliveries$batting_team, 'Delhi Daredevils', 'Delhi Capitals')
+deliveries$batting_team <- str_replace_all(deliveries$batting_team, 'Kings XI Punjab', 'Punjab Kings')
+deliveries$batting_team <- str_replace_all(deliveries$batting_team, 'Deccan Chargers', 'Sunrisers Hyderabad')
+deliveries$batting_team <- str_replace_all(deliveries$batting_team, 'Rising Pune Supergiant', 'Pune Warriors')
+deliveries$batting_team <- str_replace_all(deliveries$batting_team, 'Rising Pune Supergiants', 'Pune Warriors')
+deliveries$batting_team <- str_replace_all(deliveries$batting_team, 'Pune Warriorss', 'Pune Warriors')
+deliveries$batting_team <- str_replace_all(deliveries$batting_team, 'Gujarat Lions', 'Gujarat Titans')
+deliveries <- deliveries %>% filter(batting_team %in% teams2024)
+head(deliveries)
+```
+```{r}
+colnames(matches)[colnames(matches) == "ID"] <- "id"
+colnames(deliveries)[colnames(deliveries) == "match_id"] <- "id"
+final <- matches %>% inner_join(deliveries, by = "id")
+head(final)
+```
+```{r}
+final <- final %>% filter(inning == 2)
+head(final)
+```
+```{r}
+final$current_score <- ave(final$total_run, final$id, FUN = cumsum)
+head(final)
+```
+```{r}
+final$runs_left <- ifelse(final$target - final$current_score >= 0, final$target - final$current_score, 0)
+head(final)
+```
+```{r}
+final$balls_left <- ifelse(120 - final$over * 6 - final$ball >= 0, 120 - final$over * 6 - final$ball, 0)
+head(final)
+```
+
+```{r}
+final <- final %>% group_by(id) %>% mutate(wickets_left = 10 - cumsum(is_wicket)) %>% ungroup()
+head(final)
+```
+```{r}
+final$current_run_rate <- (final$current_score * 6) / (120 - final$balls_left)
+final$required_run_rate <- ifelse(final$balls_left > 0, final$runs_left * 6 / final$balls_left, 0)
+head(final)
+```
+```{r}
+result <- function(row) {
+  if (row["batting_team"] == row["winner"]) {
+    return(1)
+  } else {
+    return(0)
+  }
 }
 
-numeric_df <- final_df %>% select_if(is.numeric)
-corr_cols <- correlation(numeric_df, 0.85)
-print(corr_cols)
+final$result <- apply(final, 1, result)
+final
 ```
+```{r}
+if (!"BowlingTeam" %in% colnames(final)) {
+  final$BowlingTeam <- NA
+}
+if (!"BattingTeam" %in% colnames(final)) {
+  final$BattingTeam <- NA
+}
+
+# Update BowlingTeam
+index1 <- which(final$team2 == final$batting_team)
+index2 <- which(final$team1 == final$batting_team)
+
+final$BowlingTeam[index1] <- final$team1[index1]
+final$BowlingTeam[index2] <- final$team2[index2]
+
+# Update BattingTeam
+index3 <- which(final$team2 == final$bowling_team)
+index4 <- which(final$team1 == final$bowling_team)
+
+final$BattingTeam[index3] <- final$team1[index3]
+final$BattingTeam[index4] <- final$team2[index4]
+
+head(final)
+```
+```{r}
+winningPred <- final %>% select(BattingTeam, BowlingTeam, city, runs_left, balls_left, wickets_left, current_run_rate, required_run_rate, target, result)
+head(winningPred)
+```
+```{r}
+sample_n(winningPred, 1)
+```
+```{r}
+trf <- dummyVars(result ~ BattingTeam + BowlingTeam + city, data = winningPred, fullRank = TRUE)
+X <- predict(trf, newdata = winningPred)
+y <- winningPred$result
+dim(X)
+length(y)
+```
+```{r}
+set.seed(42)
+
+# Create training indices (70% training, 30% testing)
+train_indices <- createDataPartition(y, p = 0.7, list = FALSE)
+
+# Split the dataset
+X_train <- X[train_indices, ]
+X_test <- X[-train_indices, ]
+y_train <- y[train_indices]
+y_test <- y[-train_indices]
+
+X_train <- as.data.frame(X_train)  # Convert to data frame if not already
+y_train <- as.factor(y_train)      # Ensure y_train is a factor
+
+
+sum(is.na(X_train))  # Count missing values in X_train
+sum(is.na(y_train))  # Count missing values in y_train
+sum(is.na(X_test))
+
+preProcessObj <- preProcess(X_train, method = 'medianImpute') 
+X_train <- predict(preProcessObj, X_train)
+X_train <- apply(X_train, 2, function(col) ifelse(is.na(col), Mode(col), col))
+
+X_test <- predict(preProcessObj, X_test)
+```
+
+```{r}
+set.seed(42)
+
+# Train the Random Forest model
+rf_model <- randomForest(x = X_train, y = as.factor(y_train), ntree = 200, mtry = sqrt(ncol(X_train)))
+
+# Predict on test data
+y_pred <- predict(rf_model, newdata = X_test)
+
+confusion_matrix_1 <- confusionMatrix(y_pred, as.factor(y_test))
+print(confusion_matrix_1)
+
+conf_matrix_table <- as.data.frame(confusion_matrix$table)
+
+colnames(conf_matrix_table) <- c("Predicted", "Actual", "Freq")
+
+ggplot(data = conf_matrix_table, aes(x = Actual, y = Predicted, fill = Freq)) + geom_tile() + geom_text(aes(label = Freq), color = "white", size = 5) + scale_fill_gradient(low = "lightblue", high = "blue") + theme_minimal() + labs(title = "Confusion Matrix", x = "Actual", y = "Predicted") + theme(plot.title = element_text(hjust = 0.5))
+```
+
