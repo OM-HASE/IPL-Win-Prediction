@@ -17,6 +17,9 @@ library(ggthemes)
 library(stringr)
 library(caret)
 library(randomForest)
+library(e1071)
+library(rpart)
+library(pROC)
 ```
 
 ```{r}
@@ -370,7 +373,7 @@ head(deliveries)
 ```
 
 ```{r}
-inning_score<- deliveries %>% group_by(match_id, inning) %>% summarise(total_runs = sum(total_runs)) %>% ungroup() %>% filter(inning == 1)
+inning_score<- deliveries %>% group_by(match_id, inning) %>% summarise(total_runs = sum(total_runs),.groups = 'drop') %>% filter(inning == 1)
 head(inning_score)
 ```
 ```{r}
@@ -378,7 +381,7 @@ inning_score <- inning_score %>% mutate(target = total_runs + 1)
 head(inning_score)
 ```
 ```{r}
-colnames(matches)[colnames(matches) == "ID"] <- "id"
+colnames(matches)[colnames(matches) == "id"] <- "id"
 colnames(inning_score)[colnames(inning_score) == "match_id"] <- "id"
 matches <- matches %>% left_join(inning_score %>% select(id, target), by = "id")
 head(matches)
@@ -418,18 +421,7 @@ matches$winner <- gsub('Gujarat Lions', 'Gujarat Titans', matches$winner)
 head(matches)
 ```
 ```{r}
-teams2024<- c(
-    'Rajasthan Royals',
-    'Royal Challengers Bangalore',
-    'Sunrisers Hyderabad', 
-    'Delhi Capitals', 
-    'Chennai Super Kings',
-    'Gujarat Titans', 
-    'Lucknow Super Giants', 
-    'Kolkata Knight Riders',
-    'Punjab Kings', 
-    'Mumbai Indians'
-)
+teams2024<- c('Rajasthan Royals','Royal Challengers Bangalore','Sunrisers Hyderabad', 'Delhi Capitals', 'Chennai Super Kings','Gujarat Titans', 'Lucknow Super Giants', 'Kolkata Knight Riders','Punjab Kings', 'Mumbai Indians')
 
 matches <- matches %>% filter(team1 %in% teams2024) %>% filter(team2 %in% teams2024) %>% filter(winner %in% teams2024)
 unique_teams <- unique(matches$team1)
@@ -484,24 +476,14 @@ final$required_run_rate <- ifelse(final$balls_left > 0, final$runs_left * 6 / fi
 head(final)
 ```
 ```{r}
-result <- function(row) {
-  if (row["batting_team"] == row["winner"]) {
-    return(1)
-  } else {
-    return(0)
-  }
-}
+result <- function(row) {if (row["batting_team"] == row["winner"]) {return(1)} else {return(0)}}
 
 final$result <- apply(final, 1, result)
 final
 ```
 ```{r}
-if (!"BowlingTeam" %in% colnames(final)) {
-  final$BowlingTeam <- NA
-}
-if (!"BattingTeam" %in% colnames(final)) {
-  final$BattingTeam <- NA
-}
+if (!"BowlingTeam" %in% colnames(final)) {final$BowlingTeam <- NA}
+if (!"BattingTeam" %in% colnames(final)) {final$BattingTeam <- NA}
 
 # Update BowlingTeam
 index1 <- which(final$team2 == final$batting_team)
@@ -534,9 +516,6 @@ dim(X)
 length(y)
 ```
 ```{r}
-set.seed(42)
-
-# Create training indices (70% training, 30% testing)
 train_indices <- createDataPartition(y, p = 0.7, list = FALSE)
 
 # Split the dataset
@@ -545,13 +524,8 @@ X_test <- X[-train_indices, ]
 y_train <- y[train_indices]
 y_test <- y[-train_indices]
 
-X_train <- as.data.frame(X_train)  # Convert to data frame if not already
-y_train <- as.factor(y_train)      # Ensure y_train is a factor
-
-
-sum(is.na(X_train))  # Count missing values in X_train
-sum(is.na(y_train))  # Count missing values in y_train
-sum(is.na(X_test))
+X_train <- as.data.frame(X_train)  
+y_train <- as.factor(y_train)   
 
 preProcessObj <- preProcess(X_train, method = 'medianImpute') 
 X_train <- predict(preProcessObj, X_train)
@@ -560,22 +534,143 @@ X_train <- apply(X_train, 2, function(col) ifelse(is.na(col), Mode(col), col))
 X_test <- predict(preProcessObj, X_test)
 ```
 
+## Random Forest
 ```{r}
-set.seed(42)
-
 # Train the Random Forest model
-rf_model <- randomForest(x = X_train, y = as.factor(y_train), ntree = 200, mtry = sqrt(ncol(X_train)))
+rf_model <- randomForest(x = X_train, y = as.factor(y_train), ntree =200, mtry = sqrt(ncol(X_train)))
 
 # Predict on test data
-y_pred <- predict(rf_model, newdata = X_test)
+y_pred_rf <- predict(rf_model, newdata = X_test)
 
-confusion_matrix_1 <- confusionMatrix(y_pred, as.factor(y_test))
-print(confusion_matrix_1)
+confusion_matrix_rf <- confusionMatrix(y_pred_rf, as.factor(y_test))
+print(confusion_matrix_rf)
 
-conf_matrix_table <- as.data.frame(confusion_matrix$table)
+conf_matrix_table_rf <- as.data.frame(confusion_matrix_rf$table)
 
+colnames(conf_matrix_table_rf) <- c("Predicted", "Actual", "Freq")
+
+ggplot(data = conf_matrix_table_rf, aes(x = Actual, y = Predicted, fill = Freq)) + geom_tile() + geom_text(aes(label = Freq), color = "white", size = 5) + scale_fill_gradient(low = "lightblue", high = "blue") + theme_minimal() + labs(title = "Confusion Matrix- Random Forest", x = "Actual", y = "Predicted") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Logistic regression
+```{r}
+X_train <- as.data.frame(X_train)
+X_test <- as.data.frame(X_test)
+
+train_data <- cbind(X_train, y_train)
+colnames(train_data)[ncol(train_data)] <- "target"  
+
+logistic_model <- glm(target ~ ., data = train_data, family = binomial)
+
+y_pred_prob <- predict(logistic_model, newdata = X_test, type = "response")
+y_pred_lr <- ifelse(y_pred_prob > 0.5, 1, 0)
+
+confusion_matrix_lr <- confusionMatrix(as.factor(y_pred_lr), as.factor(y_test))
+print(confusion_matrix_lr)
+
+conf_matrix_table_lr <- as.data.frame(confusion_matrix_lr$table)
+colnames(conf_matrix_table_lr) <- c("Predicted", "Actual", "Freq")
+
+ggplot(data = conf_matrix_table_lr, aes(x = Actual, y = Predicted, fill = Freq)) +  geom_tile() +  geom_text(aes(label = Freq), color = "white", size = 5) +  scale_fill_gradient(low = "lightblue", high = "blue") + theme_minimal() +  labs(title = "Confusion Matrix- Logistic Regression", x = "Actual", y = "Predicted") +  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Naive Base
+```{r}
+X_train <- as.data.frame(X_train)
+X_test <- as.data.frame(X_test)
+
+train_data <- cbind(X_train, y_train)
+colnames(train_data)[ncol(train_data)] <- "target"
+
+naive_bayes_model <- naiveBayes(target ~ ., data = train_data)
+
+y_pred_nb <- predict(naive_bayes_model, newdata = X_test)
+
+confusion_matrix_nb <- confusionMatrix(as.factor(y_pred_nb), as.factor(y_test))
+print(confusion_matrix_nb)
+
+conf_matrix_table_nb <- as.data.frame(confusion_matrix_nb$table)
+colnames(conf_matrix_table_nb) <- c("Predicted", "Actual", "Freq")
+
+ggplot(data = conf_matrix_table_nb, aes(x = Actual, y = Predicted, fill = Freq)) +  geom_tile() +  geom_text(aes(label = Freq), color = "white", size = 5) +  scale_fill_gradient(low = "lightblue", high = "blue") +  theme_minimal() +  labs(title = "Confusion Matrix- Naive Bayes", x = "Actual", y = "Predicted") +  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Decision Tree
+```{r}
+
+# Control parameters for decision tree
+control_params <- rpart.control(maxdepth = 20, minbucket = 3)
+
+# Train the model
+my_decision_tree_model <- rpart(as.factor(y_train) ~ ., data = as.data.frame(X_train), method = "class", control = control_params)
+val_predictions <- predict(my_decision_tree_model, X_test, type = "class")
+
+confusion_matrix_tree <- confusionMatrix(as.factor(val_predictions), as.factor(y_test))
+print(confusion_matrix_tree)
+
+conf_matrix_table <- as.data.frame(confusion_matrix_tree$table)
 colnames(conf_matrix_table) <- c("Predicted", "Actual", "Freq")
 
-ggplot(data = conf_matrix_table, aes(x = Actual, y = Predicted, fill = Freq)) + geom_tile() + geom_text(aes(label = Freq), color = "white", size = 5) + scale_fill_gradient(low = "lightblue", high = "blue") + theme_minimal() + labs(title = "Confusion Matrix", x = "Actual", y = "Predicted") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = conf_matrix_table, aes(x = Actual, y = Predicted, fill = Freq)) + geom_tile() + geom_text(aes(label = Freq), color = "white", size = 5) + scale_fill_gradient(low = "lightblue", high = "blue") + theme_minimal() + labs(title = "Confusion Matrix - Decision Tree", x = "Actual", y = "Predicted") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+## AUC-ROC Curve.
+```{r}
+prob_decision_tree <- predict(my_decision_tree_model, as.data.frame(X_test), type = "prob")[, 2]
+roc_decision_tree <- roc(as.numeric(as.factor(y_test)) - 1, prob_decision_tree)
+
+prob_rf <- predict(rf_model, newdata = X_test, type = "prob")[, 2]
+roc_rf <- roc(as.numeric(as.factor(y_test)) - 1, prob_rf)
+
+y_pred_prob_lr <- predict(logistic_model, newdata = X_test, type = "response")
+roc_logistic <- roc(as.numeric(as.factor(y_test)) - 1, y_pred_prob_lr)
+
+prob_nb <- predict(naive_bayes_model, newdata = X_test, type = "raw")[, 2]
+roc_nb <- roc(as.numeric(as.factor(y_test)) - 1, prob_nb)
+```
+
+```{r}
+# Function to extract and standardize ROC curve data
+get_roc_data <- function(roc_obj, model_name) {
+  data.frame(
+    TPR = roc_obj$sensitivities,
+    FPR = 1 - roc_obj$specificities,
+    Model = model_name
+  )
+}
+
+# Correct the labels in the legend and ensure correct order
+
+# Combine the ROC data frames in the correct sequence
+roc_combined <- rbind(
+  get_roc_data(roc_nb, "Naive Bayes"),
+  get_roc_data(roc_decision_tree, "Decision Tree"),
+  get_roc_data(roc_logistic, "Logistic Regression"),
+  get_roc_data(roc_rf, "Random Forest")
+)
+
+# Update the plot with corrected labels and colors
+ggplot(roc_combined, aes(x = FPR, y = TPR, color = Model)) +
+  geom_line(size = 1.2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "AUC-ROC Curves", x = "False Positive Rate (FPR)", y = "True Positive Rate (TPR)") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(
+    values = c(
+      "Naive Bayes" = "red",
+      "Decision Tree" = "blue",
+      "Logistic Regression" = "purple",
+      "Random Forest" = "green"
+    )
+  ) +
+  annotate("text", x = 0.8, y = 0.2, label = paste("AUC (NB):", round(auc(roc_nb), 3)), color = "red") +
+  annotate("text", x = 0.8, y = 0.15, label = paste("AUC (DT):", round(auc(roc_decision_tree), 3)), color = "blue") +
+  annotate("text", x = 0.8, y = 0.1, label = paste("AUC (LR):", round(auc(roc_logistic), 3)), color = "purple") +
+  annotate("text", x = 0.8, y = 0.05, label = paste("AUC (RF):", round(auc(roc_rf), 3)), color = "green")
+
+
+
+
 ```
 
